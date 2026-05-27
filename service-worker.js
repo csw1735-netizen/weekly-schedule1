@@ -31,6 +31,23 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// 알림을 탭하면 이미 열린 앱으로 포커스, 없으면 새 창으로 오픈.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsList) => {
+      for (const client of clientsList) {
+        if ("focus" in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow("./");
+      }
+    }),
+  );
+});
+
 // 네트워크 우선 → 실패 시 캐시 응답.
 // 데이터 변경 시 최신 HTML을 빠르게 받게 하고, 오프라인일 땐 캐시로 동작.
 self.addEventListener("fetch", (event) => {
