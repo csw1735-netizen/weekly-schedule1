@@ -784,6 +784,7 @@
       <button id="thisWeekButton" type="button">이번 주</button>
       <button id="nextWeekButton" type="button">다음 주</button>
       <button id="printButton" type="button">인쇄</button>
+      <button id="notifyTodayButton" type="button" title="오늘 일정을 폰 알림으로 띄움">🔔 오늘 알림</button>
       <button id="onButton" class="mode-on" type="button" title="미리보기 모드로 전환">ON</button>
       <button id="offButton" class="mode-off" type="button" hidden title="편집 모드로 돌아가기">OFF</button>
     </div>
@@ -1533,6 +1534,95 @@
 
     document.getElementById("onButton").addEventListener("click", enterPreviewMode);
     document.getElementById("offButton").addEventListener("click", exitPreviewMode);
+
+    // ---- 오늘 일정 알림 ----
+    function getTodayColIndex() {
+      const weekStart = parseIsoDate(state.weekStart);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      weekStart.setHours(0, 0, 0, 0);
+      const diff = Math.floor((today - weekStart) / (24 * 3600 * 1000));
+      return diff >= 0 && diff <= 6 ? diff : -1;
+    }
+
+    function buildTodayDigest() {
+      const todayCol = getTodayColIndex();
+      if (todayCol === -1) {
+        return {
+          title: "주간 계획",
+          body: "현재 주에 오늘이 포함되지 않았습니다. '이번 주' 버튼을 눌러주세요.",
+        };
+      }
+
+      const dayName = days[todayCol] + "요일";
+      const goal = String(state.goals[todayCol] || "").trim();
+      const nowHour = new Date().getHours();
+
+      const items = [];
+      for (const time of getTimes()) {
+        const key = cellKey(time, todayCol);
+        const raw = String(state.schedule[key] || "").trim();
+        if (!raw) continue;
+        const hour = parseInt(time.slice(0, 2), 10);
+        const summary = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean).join(", ");
+        items.push({ hour, time, summary });
+      }
+
+      const upcoming = items.filter(i => i.hour >= nowHour).slice(0, 5);
+      const lines = upcoming.length
+        ? upcoming.map(i => `${i.time} ${i.summary}`)
+        : items.length
+          ? [`오늘 ${items.length}개 일정 완료`]
+          : ["오늘 등록된 일정 없음"];
+
+      const title = goal
+        ? `🎯 ${dayName}: ${goal}`
+        : `${dayName} 일정`;
+
+      return { title, body: lines.join("\n") };
+    }
+
+    async function showTodayNotification() {
+      if (!("Notification" in window)) {
+        alert("이 브라우저는 알림을 지원하지 않습니다. 갤럭시 삼성 인터넷 또는 Chrome으로 열어주세요.");
+        return;
+      }
+
+      let permission = Notification.permission;
+      if (permission === "default") {
+        permission = await Notification.requestPermission();
+      }
+      if (permission !== "granted") {
+        alert("알림 권한이 거부되었습니다.\n폰 설정 > 앱 > 주간계획 > 알림에서 허용으로 바꿔주세요.");
+        return;
+      }
+
+      const { title, body } = buildTodayDigest();
+      const options = {
+        body,
+        icon: "icon.svg",
+        badge: "icon.svg",
+        tag: "daily-schedule",
+        renotify: true,
+        requireInteraction: true,
+        lang: "ko",
+        dir: "ltr",
+      };
+
+      try {
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification(title, options);
+        } else {
+          new Notification(title, options);
+        }
+        document.getElementById("status").textContent = "오늘 일정을 알림으로 띄웠습니다. 잠금화면을 확인해보세요.";
+      } catch (err) {
+        alert("알림을 띄우지 못했습니다: " + err.message);
+      }
+    }
+
+    document.getElementById("notifyTodayButton").addEventListener("click", showTodayNotification);
 
     const todoHeading = document.getElementById("todoHeading");
     todoHeading.addEventListener("click", cycleTodoSort);
