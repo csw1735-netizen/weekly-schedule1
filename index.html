@@ -12,6 +12,51 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="주간계획">
   <meta name="mobile-web-app-capable" content="yes">
+  <script src="firebase-config.js"></script>
+  <script type="module">
+    // Firebase SDK 초기화 — 설정이 비어있으면 비활성 모드
+    const cfg = window.FIREBASE_CONFIG || {};
+    const hasConfig = !!(cfg.apiKey && cfg.projectId && cfg.appId);
+
+    if (hasConfig) {
+      const [
+        { initializeApp },
+        { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence },
+        { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp },
+      ] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"),
+      ]);
+
+      const app = initializeApp(cfg);
+      const auth = getAuth(app);
+      await setPersistence(auth, browserLocalPersistence).catch(() => {});
+      const db = getFirestore(app);
+      const provider = new GoogleAuthProvider();
+
+      window.firebaseApi = {
+        enabled: true,
+        signIn: () => signInWithPopup(auth, provider),
+        signOut: () => signOut(auth),
+        onAuthChange: (cb) => onAuthStateChanged(auth, cb),
+        saveState: async (uid, payload) => {
+          await setDoc(doc(db, "users", uid), { state: payload, updatedAt: serverTimestamp() });
+        },
+        loadState: async (uid) => {
+          const snap = await getDoc(doc(db, "users", uid));
+          return snap.exists() ? (snap.data().state || null) : null;
+        },
+        watchState: (uid, cb) => onSnapshot(doc(db, "users", uid), (snap) => {
+          if (snap.metadata.hasPendingWrites) return;
+          if (snap.exists()) cb(snap.data().state || null);
+        }),
+      };
+    } else {
+      window.firebaseApi = { enabled: false };
+    }
+    window.dispatchEvent(new Event("firebaseReady"));
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -512,6 +557,58 @@
       outline: 3px solid rgba(37, 99, 235, 0.13);
     }
 
+    /* Firebase 로그인 영역 */
+    .auth-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 6px 10px;
+      margin: -4px 0 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+    }
+
+    .auth-status {
+      flex: 1;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .auth-status.logged-in {
+      color: var(--accent);
+    }
+
+    .auth-btn {
+      min-height: 32px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .auth-btn.auth-login {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+
+    .auth-btn.auth-login:hover {
+      background: var(--focus);
+      border-color: var(--focus);
+    }
+
+    .auth-btn.auth-logout:hover {
+      border-color: #dc2626;
+      color: #dc2626;
+    }
+
     /* ON/OFF 토글 버튼 */
     button.mode-on {
       background: var(--accent);
@@ -753,6 +850,11 @@
 </head>
 <body>
   <main>
+    <div class="auth-bar" id="authBar" hidden>
+      <span class="auth-status" id="authStatus">로그인하면 PC ↔ 폰이 자동 동기화됩니다</span>
+      <button id="loginButton" class="auth-btn auth-login" type="button">Google로 로그인</button>
+      <button id="logoutButton" class="auth-btn auth-logout" type="button" hidden>로그아웃</button>
+    </div>
     <h1>시간대별 주간 계획표</h1>
     <p class="subtitle">하루 목표와 시간대별 일정을 입력하면 브라우저에 자동 저장됩니다.</p>
 
@@ -778,10 +880,7 @@
     <div class="toolbar">
       <button class="primary" id="saveJsonButton" type="button">JSON 저장</button>
       <button id="saveHtmlButton" type="button">HTML 저장</button>
-      <label class="file-label" for="loadJsonInput">JSON 불러오기
-        <input id="loadJsonInput" type="file" accept="application/json,.json">
-      </label>
-      <button id="thisWeekButton" type="button">이번 주</button>
+      <button id="lastWeekButton" type="button">지난 주</button>
       <button id="nextWeekButton" type="button">다음 주</button>
       <button id="printButton" type="button">인쇄</button>
       <button id="notifyTodayButton" type="button" title="오늘 일정을 폰 알림으로 띄움">🔔 오늘 알림</button>
@@ -1292,9 +1391,29 @@
       });
     }
 
+    let currentUser = null;
+    let cloudUnsubscribe = null;
+    let cloudSaveTimer = null;
+    let suspendCloudSave = false; // 원격 변경 적용 중에는 다시 저장 방지
+
     function remember(message = "현재 상태를 브라우저에 저장했습니다.") {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       document.getElementById("status").textContent = message;
+      scheduleCloudSave();
+    }
+
+    function scheduleCloudSave() {
+      if (suspendCloudSave) return;
+      if (!currentUser || !window.firebaseApi || !window.firebaseApi.enabled) return;
+      if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = setTimeout(async () => {
+        try {
+          await window.firebaseApi.saveState(currentUser.uid, state);
+        } catch (err) {
+          console.warn("클라우드 저장 실패:", err);
+          document.getElementById("status").textContent = "⚠️ 클라우드 저장 실패 (인터넷 확인)";
+        }
+      }, 600);
     }
 
     function escapeTextarea(value) {
@@ -1424,24 +1543,6 @@
       document.getElementById("status").textContent = "HTML 파일로 저장했습니다.";
     }
 
-    function loadJson(file) {
-      if (!file) {
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          state = normalizeState(JSON.parse(reader.result));
-          remember("JSON 파일을 불러왔습니다.");
-          render();
-        } catch {
-          document.getElementById("status").textContent = "JSON 파일을 불러오지 못했습니다.";
-        }
-      };
-      reader.readAsText(file, "utf-8");
-    }
-
     document.getElementById("personName").addEventListener("input", (event) => {
       state.personName = event.target.value;
       remember();
@@ -1458,10 +1559,11 @@
     });
     document.getElementById("saveJsonButton").addEventListener("click", downloadJson);
     document.getElementById("saveHtmlButton").addEventListener("click", downloadHtml);
-    document.getElementById("loadJsonInput").addEventListener("change", (event) => loadJson(event.target.files[0]));
-    document.getElementById("thisWeekButton").addEventListener("click", () => {
-      state.weekStart = getMondayIso(new Date());
-      remember("이번 주로 이동했습니다.");
+    document.getElementById("lastWeekButton").addEventListener("click", () => {
+      const monday = getMonday(new Date());
+      monday.setDate(monday.getDate() - 7);
+      state.weekStart = toIsoDate(monday);
+      remember("지난 주로 이동했습니다.");
       render();
     });
     document.getElementById("nextWeekButton").addEventListener("click", () => {
@@ -1635,6 +1737,83 @@
 
     render();
     remember();
+
+    // ---- Firebase 인증·클라우드 동기화 흐름 ----
+    function setupFirebaseAuth() {
+      const api = window.firebaseApi;
+      const authBar = document.getElementById("authBar");
+      if (!api || !api.enabled) {
+        authBar.hidden = true;
+        return;
+      }
+      authBar.hidden = false;
+
+      const loginBtn = document.getElementById("loginButton");
+      const logoutBtn = document.getElementById("logoutButton");
+      const statusEl = document.getElementById("authStatus");
+
+      loginBtn.addEventListener("click", () => {
+        api.signIn().catch((err) => {
+          alert("로그인 실패: " + (err.message || err));
+        });
+      });
+      logoutBtn.addEventListener("click", () => {
+        api.signOut();
+      });
+
+      api.onAuthChange(async (user) => {
+        if (user) {
+          currentUser = user;
+          loginBtn.hidden = true;
+          logoutBtn.hidden = false;
+          statusEl.classList.add("logged-in");
+          statusEl.textContent = `👤 ${user.email || user.displayName || "로그인됨"}`;
+
+          try {
+            const cloudState = await api.loadState(user.uid);
+            suspendCloudSave = true;
+            if (cloudState) {
+              state = normalizeState(cloudState);
+              render();
+              document.getElementById("status").textContent = "클라우드에서 데이터를 불러왔습니다.";
+            } else {
+              suspendCloudSave = false;
+              await api.saveState(user.uid, state);
+              document.getElementById("status").textContent = "로컬 데이터를 클라우드로 올렸습니다.";
+            }
+            suspendCloudSave = false;
+          } catch (err) {
+            console.warn("클라우드 초기 동기화 실패:", err);
+          }
+
+          if (cloudUnsubscribe) cloudUnsubscribe();
+          cloudUnsubscribe = api.watchState(user.uid, (remoteState) => {
+            if (!remoteState) return;
+            suspendCloudSave = true;
+            state = normalizeState(remoteState);
+            render();
+            document.getElementById("status").textContent = "다른 기기의 변경사항이 반영되었습니다.";
+            suspendCloudSave = false;
+          });
+        } else {
+          currentUser = null;
+          loginBtn.hidden = false;
+          logoutBtn.hidden = true;
+          statusEl.classList.remove("logged-in");
+          statusEl.textContent = "로그인하면 PC ↔ 폰이 자동 동기화됩니다";
+          if (cloudUnsubscribe) {
+            cloudUnsubscribe();
+            cloudUnsubscribe = null;
+          }
+        }
+      });
+    }
+
+    if (window.firebaseApi !== undefined) {
+      setupFirebaseAuth();
+    } else {
+      window.addEventListener("firebaseReady", setupFirebaseAuth, { once: true });
+    }
 
     // PWA: service worker 등록 (HTTPS 또는 localhost에서만 동작)
     if ("serviceWorker" in navigator) {

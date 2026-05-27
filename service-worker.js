@@ -3,12 +3,13 @@
 // 캐시 이름을 바꾸면(예: 버전 번호 증가) 사용자 디바이스에서 자동으로
 // 이전 캐시가 정리되고 새 자산을 받아옵니다.
 
-const CACHE_NAME = "weekly-schedule-v1";
+const CACHE_NAME = "weekly-schedule-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icon.svg",
+  "./firebase-config.js",
 ];
 
 self.addEventListener("install", (event) => {
