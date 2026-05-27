@@ -1,0 +1,22 @@
+{
+  "name": "시간대별 주간 계획표",
+  "short_name": "주간계획",
+  "description": "하루 목표와 시간대별 일정을 한눈에 관리하는 주간 계획표",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f6f8",
+  "theme_color": "#0f766e",
+  "lang": "ko",
+  "dir": "ltr",
+  "categories": ["productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}
