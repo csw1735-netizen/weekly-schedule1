@@ -21,7 +21,12 @@
     if (hasConfig) {
       const [
         { initializeApp },
-        { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence },
+        {
+          getAuth, GoogleAuthProvider, signInWithPopup, signOut,
+          onAuthStateChanged, setPersistence, browserLocalPersistence,
+          signInWithEmailAndPassword, createUserWithEmailAndPassword,
+          sendPasswordResetEmail, updateProfile,
+        },
         { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp },
       ] = await Promise.all([
         import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js"),
@@ -37,7 +42,16 @@
 
       window.firebaseApi = {
         enabled: true,
-        signIn: () => signInWithPopup(auth, provider),
+        signInWithGoogle: () => signInWithPopup(auth, provider),
+        signInWithEmail: (email, password) => signInWithEmailAndPassword(auth, email, password),
+        signUpWithEmail: async (email, password, displayName) => {
+          const cred = await createUserWithEmailAndPassword(auth, email, password);
+          if (displayName) {
+            try { await updateProfile(cred.user, { displayName }); } catch (_) {}
+          }
+          return cred;
+        },
+        resetPassword: (email) => sendPasswordResetEmail(auth, email),
         signOut: () => signOut(auth),
         onAuthChange: (cb) => onAuthStateChanged(auth, cb),
         saveState: async (uid, payload) => {
@@ -557,6 +571,181 @@
       outline: 3px solid rgba(37, 99, 235, 0.13);
     }
 
+    /* 로그인 모달 */
+    .login-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(20, 28, 45, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .login-modal[hidden] {
+      display: none !important;
+    }
+
+    .login-modal-content {
+      position: relative;
+      width: 100%;
+      max-width: 380px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 22px 22px 18px;
+      box-shadow: 0 24px 60px rgba(20, 28, 45, 0.30);
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+
+    .login-modal-content h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .login-modal-help {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .login-field {
+      display: block;
+      margin-bottom: 10px;
+    }
+
+    .login-field > span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .login-field input {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .login-field input:focus {
+      border-color: var(--focus);
+      outline: 3px solid rgba(37, 99, 235, 0.15);
+    }
+
+    .login-error {
+      margin: 4px 0 10px;
+      padding: 8px 10px;
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      border-radius: 7px;
+      color: #b91c1c;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .login-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .login-actions button {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .login-actions button.primary {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+
+    .login-link {
+      display: block;
+      margin: 10px 0 0;
+      padding: 4px 0;
+      background: none;
+      border: none;
+      color: var(--focus);
+      font-size: 12px;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    .login-divider {
+      position: relative;
+      margin: 16px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .login-divider::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--line);
+      z-index: 0;
+    }
+
+    .login-divider span {
+      position: relative;
+      background: #fff;
+      padding: 0 10px;
+      z-index: 1;
+    }
+
+    .login-google {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .login-google:hover {
+      border-color: var(--focus);
+    }
+
+    .login-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 30px;
+      height: 30px;
+      min-height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 50%;
+    }
+
+    .login-close:hover {
+      background: #f1f3f7;
+      color: var(--ink);
+    }
+
     /* Firebase 로그인 영역 */
     .auth-bar {
       display: flex;
@@ -918,6 +1107,34 @@
     </div>
     <p class="status" id="status" role="status"></p>
     <section id="presentationView" class="presentation-view" aria-label="미리보기" hidden></section>
+
+    <div id="loginModal" class="login-modal" role="dialog" aria-labelledby="loginModalTitle" aria-modal="true" hidden>
+      <div class="login-modal-content">
+        <h3 id="loginModalTitle">로그인 또는 회원가입</h3>
+        <p class="login-modal-help">이메일·비밀번호로 가입하거나 Google 계정으로 로그인할 수 있어요. 가족마다 따로 가입하면 각자 자신의 일정만 보입니다.</p>
+        <label class="login-field">
+          <span>이메일</span>
+          <input id="loginEmail" type="email" autocomplete="email" placeholder="name@example.com">
+        </label>
+        <label class="login-field">
+          <span>비밀번호 (6자 이상)</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••">
+        </label>
+        <label class="login-field login-field-name" hidden>
+          <span>표시할 이름 (선택)</span>
+          <input id="loginDisplayName" type="text" autocomplete="nickname" placeholder="홍길동">
+        </label>
+        <p class="login-error" id="loginError" role="alert" hidden></p>
+        <div class="login-actions">
+          <button id="emailLoginButton" type="button" class="primary">로그인</button>
+          <button id="emailSignupButton" type="button">새 계정 만들기</button>
+        </div>
+        <button id="forgotPasswordButton" type="button" class="login-link">비밀번호 잊으셨나요?</button>
+        <div class="login-divider"><span>또는</span></div>
+        <button id="googleLoginButton" type="button" class="login-google">Google 계정으로 로그인</button>
+        <button id="closeLoginButton" type="button" class="login-close" aria-label="닫기">✕</button>
+      </div>
+    </div>
   </main>
 
   <script>
@@ -1739,6 +1956,55 @@
     remember();
 
     // ---- Firebase 인증·클라우드 동기화 흐름 ----
+    function translateAuthError(err) {
+      const code = (err && err.code) || "";
+      const map = {
+        "auth/email-already-in-use": "이미 가입된 이메일입니다. 로그인을 시도해 보세요.",
+        "auth/invalid-email": "이메일 형식이 올바르지 않습니다.",
+        "auth/weak-password": "비밀번호는 6자 이상이어야 합니다.",
+        "auth/wrong-password": "비밀번호가 일치하지 않습니다.",
+        "auth/user-not-found": "가입된 계정이 없습니다. '새 계정 만들기'를 눌러주세요.",
+        "auth/invalid-credential": "이메일 또는 비밀번호가 올바르지 않습니다.",
+        "auth/too-many-requests": "너무 여러 번 시도했습니다. 잠시 후 다시 시도해 주세요.",
+        "auth/popup-closed-by-user": "로그인 창이 닫혔습니다.",
+        "auth/popup-blocked": "팝업이 차단되었습니다. 팝업 허용 후 다시 시도해 주세요.",
+        "auth/unauthorized-domain": "이 도메인은 Firebase 콘솔의 승인 목록에 없습니다.",
+        "auth/missing-password": "비밀번호를 입력해 주세요.",
+        "auth/operation-not-allowed": "Firebase 콘솔에서 이메일 로그인이 켜져 있지 않습니다.",
+      };
+      return map[code] || (err && err.message) || "로그인 중 오류가 발생했습니다.";
+    }
+
+    function showLoginError(message) {
+      const el = document.getElementById("loginError");
+      el.textContent = message;
+      el.hidden = false;
+    }
+
+    function hideLoginError() {
+      const el = document.getElementById("loginError");
+      el.hidden = true;
+      el.textContent = "";
+    }
+
+    function openLoginModal() {
+      hideLoginError();
+      document.getElementById("loginModal").hidden = false;
+      setTimeout(() => document.getElementById("loginEmail").focus(), 50);
+    }
+
+    function closeLoginModal() {
+      document.getElementById("loginModal").hidden = true;
+      hideLoginError();
+    }
+
+    function readLoginInputs() {
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPassword").value;
+      const displayName = document.getElementById("loginDisplayName").value.trim();
+      return { email, password, displayName };
+    }
+
     function setupFirebaseAuth() {
       const api = window.firebaseApi;
       const authBar = document.getElementById("authBar");
@@ -1752,22 +2018,99 @@
       const logoutBtn = document.getElementById("logoutButton");
       const statusEl = document.getElementById("authStatus");
 
-      loginBtn.addEventListener("click", () => {
-        api.signIn().catch((err) => {
-          alert("로그인 실패: " + (err.message || err));
-        });
+      // 모달 열기/닫기
+      loginBtn.addEventListener("click", openLoginModal);
+      document.getElementById("closeLoginButton").addEventListener("click", closeLoginModal);
+      document.getElementById("loginModal").addEventListener("click", (event) => {
+        if (event.target.id === "loginModal") closeLoginModal();
       });
+
+      // 이메일 로그인
+      document.getElementById("emailLoginButton").addEventListener("click", async () => {
+        hideLoginError();
+        const { email, password } = readLoginInputs();
+        if (!email || !password) {
+          showLoginError("이메일과 비밀번호를 모두 입력해 주세요.");
+          return;
+        }
+        try {
+          await api.signInWithEmail(email, password);
+          closeLoginModal();
+        } catch (err) {
+          showLoginError(translateAuthError(err));
+        }
+      });
+
+      // 이메일 회원가입
+      document.getElementById("emailSignupButton").addEventListener("click", async () => {
+        hideLoginError();
+        const nameField = document.querySelector(".login-field-name");
+        if (nameField.hidden) {
+          // 처음 누르면 이름 입력칸을 보여주고 안내만
+          nameField.hidden = false;
+          showLoginError("표시할 이름을 입력하고 다시 '새 계정 만들기'를 눌러주세요. (이름은 비워둬도 됩니다)");
+          document.getElementById("loginDisplayName").focus();
+          return;
+        }
+        const { email, password, displayName } = readLoginInputs();
+        if (!email || !password) {
+          showLoginError("이메일과 비밀번호를 모두 입력해 주세요.");
+          return;
+        }
+        if (password.length < 6) {
+          showLoginError("비밀번호는 6자 이상이어야 합니다.");
+          return;
+        }
+        try {
+          await api.signUpWithEmail(email, password, displayName);
+          closeLoginModal();
+        } catch (err) {
+          showLoginError(translateAuthError(err));
+        }
+      });
+
+      // Google 로그인
+      document.getElementById("googleLoginButton").addEventListener("click", async () => {
+        hideLoginError();
+        try {
+          await api.signInWithGoogle();
+          closeLoginModal();
+        } catch (err) {
+          showLoginError(translateAuthError(err));
+        }
+      });
+
+      // 비밀번호 재설정
+      document.getElementById("forgotPasswordButton").addEventListener("click", async () => {
+        hideLoginError();
+        const { email } = readLoginInputs();
+        if (!email) {
+          showLoginError("재설정 메일을 받을 이메일을 위에 입력해 주세요.");
+          return;
+        }
+        try {
+          await api.resetPassword(email);
+          showLoginError(`재설정 메일을 ${email}로 보냈습니다. 받은편지함을 확인해 주세요.`);
+        } catch (err) {
+          showLoginError(translateAuthError(err));
+        }
+      });
+
+      // 로그아웃
       logoutBtn.addEventListener("click", () => {
+        if (!confirm("로그아웃하시겠습니까? 다른 계정으로 로그인하면 그 계정의 데이터가 표시됩니다.")) return;
         api.signOut();
       });
 
+      // 인증 상태 변경 처리
       api.onAuthChange(async (user) => {
+        const wasLoggedIn = currentUser !== null;
         if (user) {
           currentUser = user;
           loginBtn.hidden = true;
           logoutBtn.hidden = false;
           statusEl.classList.add("logged-in");
-          statusEl.textContent = `👤 ${user.email || user.displayName || "로그인됨"}`;
+          statusEl.textContent = `👤 ${user.displayName || user.email || "로그인됨"}`;
 
           try {
             const cloudState = await api.loadState(user.uid);
@@ -1779,7 +2122,7 @@
             } else {
               suspendCloudSave = false;
               await api.saveState(user.uid, state);
-              document.getElementById("status").textContent = "로컬 데이터를 클라우드로 올렸습니다.";
+              document.getElementById("status").textContent = "새 계정에 데이터를 저장했습니다.";
             }
             suspendCloudSave = false;
           } catch (err) {
@@ -1804,6 +2147,15 @@
           if (cloudUnsubscribe) {
             cloudUnsubscribe();
             cloudUnsubscribe = null;
+          }
+          // 명시적 로그아웃 시 이전 사용자 데이터가 화면에 남지 않도록 초기화
+          if (wasLoggedIn) {
+            suspendCloudSave = true;
+            state = clone(defaultState);
+            localStorage.removeItem(STORAGE_KEY);
+            render();
+            suspendCloudSave = false;
+            document.getElementById("status").textContent = "로그아웃되었습니다. 다른 계정으로 로그인할 수 있어요.";
           }
         }
       });
