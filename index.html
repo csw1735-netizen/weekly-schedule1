@@ -944,6 +944,64 @@
       margin-top: 5px;
     }
 
+    /* 체크박스 항목 (preview-list) — 기본 list-style 제거 */
+    .presentation-view ul.preview-list {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .presentation-view .preview-item label {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      cursor: pointer;
+      word-break: keep-all;
+    }
+
+    .presentation-view .preview-item input[type="checkbox"] {
+      flex-shrink: 0;
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .presentation-view .preview-item span {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .presentation-view .preview-item.is-done span {
+      text-decoration: line-through;
+      color: var(--muted);
+    }
+
+    /* 달성률 뱃지 */
+    .presentation-view .achieve {
+      display: block;
+      margin-top: 4px;
+      padding: 2px 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .presentation-view .achieve.achieve-empty {
+      background: var(--line);
+      color: var(--muted);
+    }
+
+    .presentation-view .achieve.achieve-full {
+      background: #16a34a;
+    }
+
     .presentation-view .todo-export {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1181,7 +1239,8 @@
       schedule: {},
       colors: {},
       todoList: "",
-      todoSort: "none"
+      todoSort: "none",
+      done: {}
     };
 
     const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -1274,6 +1333,11 @@
       }
       next.todoList = String(value.todoList || "");
       next.todoSort = SORT_STATES.includes(value.todoSort) ? value.todoSort : "none";
+      if (value.done && typeof value.done === "object" && !Array.isArray(value.done)) {
+        next.done = Object.fromEntries(
+          Object.entries(value.done).filter(([, v]) => v === true)
+        );
+      }
       if (value.schedule && typeof value.schedule === "object" && !Array.isArray(value.schedule)) {
         next.schedule = Object.fromEntries(
           Object.entries(value.schedule).map(([key, cell]) => [key, String(cell || "")])
@@ -1819,12 +1883,103 @@
     document.getElementById("saveHtmlButton").addEventListener("click", downloadHtml);
     document.getElementById("printButton").addEventListener("click", () => window.print());
 
+    function makeDoneKey(cellId, text) {
+      return `${cellId}::${text.trim()}`;
+    }
+
+    function splitItems(value) {
+      return String(value || "")
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    function formatItemsWithDone(value, cellId) {
+      const items = splitItems(value);
+      if (!items.length) return "";
+      return `<ul class="preview-list">${items
+        .map((item) => {
+          const key = makeDoneKey(cellId, item);
+          const done = !!(state.done && state.done[key]);
+          return `<li class="preview-item${done ? " is-done" : ""}">
+            <label>
+              <input type="checkbox" ${done ? "checked" : ""} data-done-key="${escapeHtml(key)}">
+              <span>${escapeHtml(item)}</span>
+            </label>
+          </li>`;
+        })
+        .join("")}</ul>`;
+    }
+
+    function calculateAchievement(colIndex) {
+      let total = 0;
+      let done = 0;
+      const goalItems = splitItems(state.goals[colIndex]);
+      goalItems.forEach((item) => {
+        total += 1;
+        if (state.done && state.done[makeDoneKey(`goal:${colIndex}`, item)]) {
+          done += 1;
+        }
+      });
+      for (const time of getTimes()) {
+        const key = cellKey(time, colIndex);
+        const items = splitItems(state.schedule[key]);
+        items.forEach((item) => {
+          total += 1;
+          if (state.done && state.done[makeDoneKey(key, item)]) {
+            done += 1;
+          }
+        });
+      }
+      return { total, done };
+    }
+
+    function formatAchievement(colIndex) {
+      const { total, done } = calculateAchievement(colIndex);
+      if (total === 0) return `<span class="achieve achieve-empty" data-col="${colIndex}">—</span>`;
+      const cls = done === total ? "achieve achieve-full" : "achieve";
+      return `<span class="${cls}" data-col="${colIndex}">${done}/${total}</span>`;
+    }
+
+    function refreshAchievementRates() {
+      for (let colIndex = 0; colIndex < 7; colIndex += 1) {
+        const { total, done } = calculateAchievement(colIndex);
+        const el = document.querySelector(`#presentationView .achieve[data-col="${colIndex}"]`);
+        if (!el) continue;
+        if (total === 0) {
+          el.textContent = "—";
+          el.classList.add("achieve-empty");
+          el.classList.remove("achieve-full");
+        } else {
+          el.textContent = `${done}/${total}`;
+          el.classList.remove("achieve-empty");
+          el.classList.toggle("achieve-full", done === total);
+        }
+      }
+    }
+
+    function onPreviewItemToggle(event) {
+      const cb = event.target;
+      if (!cb.matches('input[type="checkbox"][data-done-key]')) return;
+      const key = cb.dataset.doneKey;
+      if (!state.done) state.done = {};
+      if (cb.checked) {
+        state.done[key] = true;
+      } else {
+        delete state.done[key];
+      }
+      const li = cb.closest(".preview-item");
+      if (li) li.classList.toggle("is-done", cb.checked);
+      refreshAchievementRates();
+      remember(cb.checked ? "달성 표시했습니다." : "달성 해제했습니다.");
+    }
+
     function buildPresentationBody() {
       const weekDays = getWeekDays();
       const goalRow = `
         <tr class="goal-row">
           <th>하루 목표</th>
-          ${weekDays.map((_, colIndex) => `<td style="${cellStyle(state.goalColors[colIndex])}">${formatItems(state.goals[colIndex])}</td>`).join("")}
+          ${weekDays.map((_, colIndex) => `<td style="${cellStyle(state.goalColors[colIndex])}">${formatItemsWithDone(state.goals[colIndex] || "", `goal:${colIndex}`)}</td>`).join("")}
         </tr>
       `;
       const rows = getTimes().map((time) => `
@@ -1832,7 +1987,7 @@
           <th>${escapeHtml(time)}</th>
           ${weekDays.map((_, colIndex) => {
             const key = cellKey(time, colIndex);
-            return `<td style="${cellStyle(state.colors[key])}">${formatItems(state.schedule[key] || "")}</td>`;
+            return `<td style="${cellStyle(state.colors[key])}">${formatItemsWithDone(state.schedule[key] || "", key)}</td>`;
           }).join("")}
         </tr>
       `).join("");
@@ -1847,7 +2002,7 @@
               <thead>
                 <tr>
                   <th>시간</th>
-                  ${weekDays.map((item, index) => `<th class="${getDayClass(index)}">${escapeHtml(item.day)}<span class="date">${escapeHtml(item.label)}</span></th>`).join("")}
+                  ${weekDays.map((item, index) => `<th class="${getDayClass(index)}">${escapeHtml(item.day)}<span class="date">${escapeHtml(item.label)}</span>${formatAchievement(index)}</th>`).join("")}
                 </tr>
               </thead>
               <tbody>${goalRow}${rows}</tbody>
@@ -1882,6 +2037,7 @@
 
     document.getElementById("onButton").addEventListener("click", enterPreviewMode);
     document.getElementById("offButton").addEventListener("click", exitPreviewMode);
+    document.getElementById("presentationView").addEventListener("change", onPreviewItemToggle);
 
     // ---- 오늘 일정 알림 ----
     function getTodayColIndex() {
