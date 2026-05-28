@@ -1934,11 +1934,16 @@
       return { total, done };
     }
 
+    function achievementText(done, total) {
+      const pct = Math.round((done / total) * 100);
+      return `${done}/${total}(${pct}%)`;
+    }
+
     function formatAchievement(colIndex) {
       const { total, done } = calculateAchievement(colIndex);
       if (total === 0) return `<span class="achieve achieve-empty" data-col="${colIndex}">—</span>`;
       const cls = done === total ? "achieve achieve-full" : "achieve";
-      return `<span class="${cls}" data-col="${colIndex}">${done}/${total}</span>`;
+      return `<span class="${cls}" data-col="${colIndex}">${achievementText(done, total)}</span>`;
     }
 
     function refreshAchievementRates() {
@@ -1951,7 +1956,7 @@
           el.classList.add("achieve-empty");
           el.classList.remove("achieve-full");
         } else {
-          el.textContent = `${done}/${total}`;
+          el.textContent = achievementText(done, total);
           el.classList.remove("achieve-empty");
           el.classList.toggle("achieve-full", done === total);
         }
