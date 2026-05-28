@@ -1912,15 +1912,9 @@
     }
 
     function calculateAchievement(colIndex) {
+      // 하루 목표는 달성률 계산에서 제외하고, 시간대 일정만 합산한다.
       let total = 0;
       let done = 0;
-      const goalItems = splitItems(state.goals[colIndex]);
-      goalItems.forEach((item) => {
-        total += 1;
-        if (state.done && state.done[makeDoneKey(`goal:${colIndex}`, item)]) {
-          done += 1;
-        }
-      });
       for (const time of getTimes()) {
         const key = cellKey(time, colIndex);
         const items = splitItems(state.schedule[key]);
