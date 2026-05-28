@@ -880,8 +880,6 @@
     <div class="toolbar">
       <button class="primary" id="saveJsonButton" type="button">JSON 저장</button>
       <button id="saveHtmlButton" type="button">HTML 저장</button>
-      <button id="lastWeekButton" type="button">지난 주</button>
-      <button id="nextWeekButton" type="button">다음 주</button>
       <button id="printButton" type="button">인쇄</button>
       <button id="notifyTodayButton" type="button" title="오늘 일정을 폰 알림으로 띄움">🔔 오늘 알림</button>
       <button id="onButton" class="mode-on" type="button" title="미리보기 모드로 전환">ON</button>
@@ -1559,18 +1557,6 @@
     });
     document.getElementById("saveJsonButton").addEventListener("click", downloadJson);
     document.getElementById("saveHtmlButton").addEventListener("click", downloadHtml);
-    document.getElementById("lastWeekButton").addEventListener("click", () => {
-      const monday = getMonday(new Date());
-      monday.setDate(monday.getDate() - 7);
-      state.weekStart = toIsoDate(monday);
-      remember("지난 주로 이동했습니다.");
-      render();
-    });
-    document.getElementById("nextWeekButton").addEventListener("click", () => {
-      state.weekStart = getNextMondayIso(new Date());
-      remember("다음 주로 이동했습니다.");
-      render();
-    });
     document.getElementById("printButton").addEventListener("click", () => window.print());
 
     function buildPresentationBody() {
