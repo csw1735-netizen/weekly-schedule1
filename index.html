@@ -794,6 +794,20 @@
       .todo-items {
         max-height: none;
       }
+
+      /* 미리보기(ON) 화면도 모바일에서는 세로로 쌓기 */
+      .presentation-view .export-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .presentation-view .todo-export {
+        position: static;
+        top: auto;
+      }
+
+      .presentation-view table {
+        min-width: 560px;
+      }
     }
 
     @media print {
