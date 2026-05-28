@@ -494,6 +494,25 @@
       white-space: nowrap;
     }
 
+    .todo-count {
+      display: inline-block;
+      min-width: 22px;
+      padding: 1px 7px;
+      margin-left: 4px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 11px;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .todo-count.is-zero {
+      background: var(--line);
+      color: var(--muted);
+    }
+
     .todo-panel textarea {
       min-height: 118px;
       border: 0;
@@ -1055,7 +1074,7 @@
   <main>
     <div class="auth-bar" id="authBar" hidden>
       <span class="auth-status" id="authStatus">로그인하면 PC ↔ 폰이 자동 동기화됩니다</span>
-      <button id="loginButton" class="auth-btn auth-login" type="button">Google로 로그인</button>
+      <button id="loginButton" class="auth-btn auth-login" type="button">로그인</button>
       <button id="logoutButton" class="auth-btn auth-logout" type="button" hidden>로그아웃</button>
     </div>
     <h1>시간대별 주간 계획표</h1>
@@ -1076,6 +1095,7 @@
           <option value="day">하루형 06:00-23:00</option>
           <option value="work">업무형 08:00-20:00</option>
           <option value="school">등교형 07:00-22:00</option>
+          <option value="simple">간략형 오전/오후/저녁</option>
         </select>
       </label>
     </section>
@@ -1098,7 +1118,7 @@
       </div>
       <aside class="todo-panel" aria-label="To do list">
         <h2 id="todoHeading" role="button" tabindex="0" title="클릭하면 정렬을 바꿉니다">
-          <span>To do list</span>
+          <span class="todo-heading-title">To do list <span class="todo-count" id="todoCount" aria-label="총 항목 수">0</span></span>
           <span class="todo-sort-label" id="todoSortLabel">입력 순</span>
         </h2>
         <textarea id="todoList" placeholder="할 일을 줄마다 입력"></textarea>
@@ -1145,7 +1165,8 @@
     const presets = {
       day: { start: 6, end: 23 },
       work: { start: 8, end: 20 },
-      school: { start: 7, end: 22 }
+      school: { start: 7, end: 22 },
+      simple: { type: "labels", labels: ["오전", "오후", "저녁"] }
     };
     const SORT_STATES = ["none", "asc", "desc"];
     const SORT_LABELS = { none: "입력 순", asc: "↑ 오름차순", desc: "↓ 내림차순" };
@@ -1217,6 +1238,9 @@
 
     function getTimes() {
       const preset = presets[state.timePreset] || presets.day;
+      if (preset.type === "labels") {
+        return preset.labels.slice();
+      }
       const times = [];
       for (let hour = preset.start; hour <= preset.end; hour += 1) {
         times.push(`${pad(hour)}:00`);
@@ -1551,6 +1575,11 @@
     function renderTodoItems() {
       const todoItems = document.getElementById("todoItems");
       const items = getTodoItems();
+      const countEl = document.getElementById("todoCount");
+      if (countEl) {
+        countEl.textContent = items.length;
+        countEl.classList.toggle("is-zero", items.length === 0);
+      }
       if (!items.length) {
         todoItems.innerHTML = `<p class="todo-empty">To do list에 줄마다 입력하면 여기에서 끌어다 시간표에 놓을 수 있습니다.</p>`;
         return;
@@ -1876,23 +1905,32 @@
       const dayName = days[todayCol] + "요일";
       const goal = String(state.goals[todayCol] || "").trim();
       const nowHour = new Date().getHours();
+      const preset = presets[state.timePreset] || presets.day;
+      const isLabelPreset = preset.type === "labels";
 
       const items = [];
       for (const time of getTimes()) {
         const key = cellKey(time, todayCol);
         const raw = String(state.schedule[key] || "").trim();
         if (!raw) continue;
-        const hour = parseInt(time.slice(0, 2), 10);
         const summary = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean).join(", ");
+        const hour = isLabelPreset ? null : parseInt(time.slice(0, 2), 10);
         items.push({ hour, time, summary });
       }
 
-      const upcoming = items.filter(i => i.hour >= nowHour).slice(0, 5);
-      const lines = upcoming.length
-        ? upcoming.map(i => `${i.time} ${i.summary}`)
-        : items.length
-          ? [`오늘 ${items.length}개 일정 완료`]
+      let lines;
+      if (isLabelPreset) {
+        lines = items.length
+          ? items.map(i => `${i.time}: ${i.summary}`)
           : ["오늘 등록된 일정 없음"];
+      } else {
+        const upcoming = items.filter(i => i.hour >= nowHour).slice(0, 5);
+        lines = upcoming.length
+          ? upcoming.map(i => `${i.time} ${i.summary}`)
+          : items.length
+            ? [`오늘 ${items.length}개 일정 완료`]
+            : ["오늘 등록된 일정 없음"];
+      }
 
       const title = goal
         ? `🎯 ${dayName}: ${goal}`
