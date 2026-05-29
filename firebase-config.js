@@ -14,3 +14,10 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "667173376390",
   appId: "1:667173376390:web:6fde53ccb6bd6d020adc07"
 };
+
+// 구글 캘린더 연동용 OAuth 2.0 웹 클라이언트 ID.
+// Google Cloud Console → API 및 서비스 → 사용자 인증 정보에서
+// "OAuth 2.0 클라이언트 ID"의 웹 클라이언트 ID를 복사해 넣으세요.
+// (xxxxxxxx.apps.googleusercontent.com 형태)
+// 비워두면 "구글 캘린더 연동" 버튼이 숨겨집니다.
+window.GOOGLE_CLIENT_ID = "667173376390-5sresqul4u0rikluv52uekfpn6975sh6.apps.googleusercontent.com";

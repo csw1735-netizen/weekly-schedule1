@@ -13,6 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="주간계획">
   <meta name="mobile-web-app-capable" content="yes">
   <script src="firebase-config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
   <script type="module">
     // Firebase SDK 초기화 — 설정이 비어있으면 비활성 모드
     const cfg = window.FIREBASE_CONFIG || {};
@@ -1162,6 +1163,7 @@
       <button class="primary" id="saveJsonButton" type="button">JSON 저장</button>
       <button id="saveHtmlButton" type="button">HTML 저장</button>
       <button id="printButton" type="button">인쇄</button>
+      <button id="calendarSyncButton" type="button" hidden title="구글 캘린더 일정을 하루 목표에 반영">📅 구글 캘린더 연동</button>
       <button id="notifyTodayButton" type="button" title="오늘 일정을 폰 알림으로 띄움">🔔 오늘 알림</button>
       <button id="onButton" class="mode-on" type="button" title="미리보기 모드로 전환">ON</button>
       <button id="offButton" class="mode-off" type="button" hidden title="편집 모드로 돌아가기">OFF</button>
@@ -2135,6 +2137,105 @@
     }
 
     document.getElementById("notifyTodayButton").addEventListener("click", showTodayNotification);
+
+    // ---- 구글 캘린더 연동 ----
+    let calendarTokenClient = null;
+
+    function setupCalendarButton() {
+      const btn = document.getElementById("calendarSyncButton");
+      if (!window.GOOGLE_CLIENT_ID) {
+        btn.hidden = true;
+        return;
+      }
+      btn.hidden = false;
+      btn.addEventListener("click", syncGoogleCalendar);
+    }
+
+    function syncGoogleCalendar() {
+      if (!window.GOOGLE_CLIENT_ID) {
+        alert("구글 캘린더 연동이 아직 설정되지 않았습니다.");
+        return;
+      }
+      if (!(window.google && window.google.accounts && window.google.accounts.oauth2)) {
+        alert("구글 라이브러리를 불러오는 중입니다. 잠시 후 다시 눌러주세요.");
+        return;
+      }
+      if (!calendarTokenClient) {
+        calendarTokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: window.GOOGLE_CLIENT_ID,
+          scope: "https://www.googleapis.com/auth/calendar.readonly",
+          callback: (resp) => {
+            if (resp && resp.access_token) {
+              fetchAndApplyCalendar(resp.access_token);
+            } else {
+              document.getElementById("status").textContent =
+                "캘린더 권한을 받지 못했습니다." + (resp && resp.error ? ` (${resp.error})` : "");
+            }
+          },
+        });
+      }
+      document.getElementById("status").textContent = "구글 캘린더 권한을 요청하는 중…";
+      calendarTokenClient.requestAccessToken();
+    }
+
+    async function fetchAndApplyCalendar(accessToken) {
+      const weekDays = getWeekDays();
+      const monday = parseIsoDate(state.weekStart);
+      monday.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(monday);
+      weekEnd.setDate(monday.getDate() + 7);
+
+      const url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        + `?timeMin=${encodeURIComponent(monday.toISOString())}`
+        + `&timeMax=${encodeURIComponent(weekEnd.toISOString())}`
+        + "&singleEvents=true&orderBy=startTime&maxResults=100";
+
+      let data;
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        data = await res.json();
+      } catch (err) {
+        document.getElementById("status").textContent = "캘린더를 불러오지 못했습니다: " + err.message;
+        return;
+      }
+
+      const events = data.items || [];
+      const byDate = {};
+      for (const ev of events) {
+        const startIso = ev.start && (ev.start.dateTime
+          ? ev.start.dateTime.slice(0, 10)
+          : ev.start.date);
+        if (!startIso) continue;
+        const time = ev.start.dateTime ? ev.start.dateTime.slice(11, 16) : "";
+        const summary = (ev.summary || "(제목 없음)").trim();
+        const label = time ? `${time} ${summary}` : summary;
+        (byDate[startIso] = byDate[startIso] || []).push(label);
+      }
+
+      let added = 0;
+      weekDays.forEach((wd, colIndex) => {
+        const dayEvents = byDate[wd.iso] || [];
+        if (!dayEvents.length) return;
+        const merged = splitItems(state.goals[colIndex]);
+        dayEvents.forEach((e) => {
+          if (!merged.includes(e)) {
+            merged.push(e);
+            added += 1;
+          }
+        });
+        state.goals[colIndex] = merged.join("\n");
+      });
+
+      render();
+      if (added > 0) {
+        remember(`구글 캘린더에서 ${added}개 일정을 하루 목표에 반영했습니다.`);
+      } else {
+        document.getElementById("status").textContent = "이번 주 캘린더에 새로 반영할 일정이 없습니다.";
+      }
+    }
+
+    setupCalendarButton();
 
     const todoHeading = document.getElementById("todoHeading");
     todoHeading.addEventListener("click", cycleTodoSort);
